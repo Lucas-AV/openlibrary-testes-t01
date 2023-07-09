@@ -26,6 +26,7 @@ class BookshelvesEvents(db.CommonExtras):
         edition_id,
         event_date,
         event_type=BookshelfEvent.START.value,
+        yearly_goal=None,
     ):
         oldb = db.get_db()
 
@@ -36,6 +37,7 @@ class BookshelvesEvents(db.CommonExtras):
             edition_id=edition_id or cls.NULL_EDITION_ID,
             event_type=event_type,
             event_date=event_date,
+            yearly_goal=yearly_goal,
         )
 
     # Read methods:
@@ -86,6 +88,28 @@ class BookshelvesEvents(db.CommonExtras):
         return list(oldb.select(cls.TABLENAME, where=where, vars=data))
 
     @classmethod
+    def get_reading_log_counts(cls, username, event_type, year):
+        oldb = db.get_db()
+
+        data = {
+            'username': username,
+            'event_type': event_type,
+            'year': year,
+        }
+
+        query = (
+            f"SELECT COUNT(*) FROM {cls.TABLENAME}"
+            " WHERE username=$username"
+            " AND event_type=$event_type"
+            " AND EXTRACT(YEAR FROM event_date) = $year"
+        )
+
+        results = oldb.query(query, vars=data)
+        count = results[0].values()[0] if results else 0
+        return count
+
+
+    @classmethod
     def select_by_user_type_and_year(cls, username, event_type, year):
         oldb = db.get_db()
 
@@ -105,21 +129,19 @@ class BookshelvesEvents(db.CommonExtras):
 
     @classmethod
     def select_distinct_by_user_type_and_year(cls, username, event_type, year):
-        """Returns a list of the most recent check-in events, with no repeating
-        work IDs.  Useful for calculating one's yearly reading goal progress.
-        """
         oldb = db.get_db()
 
         data = {
             'username': username,
             'event_type': event_type,
-            'event_date': f'{year}%',
+            'year': year,
         }
+
         query = (
-            f"select distinct on (work_id) work_id, * from {cls.TABLENAME} "
-            "where username=$username and event_type=$event_type and "
-            "event_date LIKE $event_date "
-            "order by work_id, updated desc"
+            f"SELECT DISTINCT ON (work_id) work_id, *, yearly_goal FROM {cls.TABLENAME} "
+            "WHERE username=$username AND event_type=$event_type AND "
+            "event_date LIKE $year || '%'"
+            "ORDER BY work_id, updated DESC"
         )
 
         return list(oldb.query(query, vars=data))
@@ -161,6 +183,7 @@ class BookshelvesEvents(db.CommonExtras):
             event_date=event_date,
         )
 
+    @classmethod
     def update_event_data(cls, pid, data):
         oldb = db.get_db()
 
